@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Particle Physics - Hand Control</title>
+    <title>AI Particle Physics - Double Helix Edition</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
         
@@ -63,18 +63,14 @@
     <script>
         const PARTICLE_COUNT = 4000;
         let currentShape = 'sphere';
-        let isLocked = false;
-        let isShattered = false;
-
-        let rotVelX = 0, rotVelY = 0.005;
-        let lastHandX = 0.5, lastHandY = 0.5;
+        let isLocked = false, isShattered = false;
+        let rotVelX = 0, rotVelY = 0.005, lastHandX = 0.5, lastHandY = 0.5;
         let currentScale = 1.0, targetHue = 0.5;
         const shatterOffsets = new Float32Array(PARTICLE_COUNT * 3);
 
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         camera.position.z = 35;
-
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
@@ -83,7 +79,6 @@
         const positions = new Float32Array(PARTICLE_COUNT * 3);
         const targetPositions = new Float32Array(PARTICLE_COUNT * 3);
         const colors = new Float32Array(PARTICLE_COUNT * 3);
-
         geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
         geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
@@ -100,9 +95,21 @@
                     y = 0.7 * (13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t));
                     z = (Math.random() - 0.5) * 4;
                 } else if (type === 'dna') {
-                    const t = (i / PARTICLE_COUNT) * Math.PI * 10;
-                    const s = i % 2 === 0 ? 1 : -1;
-                    x = 5 * Math.cos(t + (s * Math.PI)); y = (i / PARTICLE_COUNT - 0.5) * 30; z = 5 * Math.sin(t + (s * Math.PI));
+                    const t = (i / PARTICLE_COUNT) * 15; // vertical span
+                    const spiral = i % 3; // 0 & 1 for strands, 2 for rungs
+                    const angle = t * 0.5;
+                    const radius = 6;
+                    
+                    if (spiral === 0) { // Strand 1
+                        x = radius * Math.cos(angle); z = radius * Math.sin(angle); y = t - 7.5;
+                    } else if (spiral === 1) { // Strand 2
+                        x = radius * Math.cos(angle + Math.PI); z = radius * Math.sin(angle + Math.PI); y = t - 7.5;
+                    } else { // Rungs
+                        const lerp = Math.random();
+                        x = (radius * Math.cos(angle)) * (lerp * 2 - 1);
+                        z = (radius * Math.sin(angle)) * (lerp * 2 - 1);
+                        y = t - 7.5;
+                    }
                 } else {
                     const phi = Math.acos(-1 + (2 * i) / PARTICLE_COUNT);
                     const theta = Math.sqrt(PARTICLE_COUNT * Math.PI) * phi;
@@ -113,10 +120,8 @@
         }
 
         window.setShape = (type) => { currentShape = type; updateShapeTargets(type); };
-        
         window.toggleLock = () => {
-            isLocked = !isLocked;
-            rotVelX = 0; rotVelY = 0;
+            isLocked = !isLocked; rotVelX = 0; rotVelY = 0;
             document.getElementById('btn-lock').classList.toggle('active');
             document.getElementById('status-indicator').innerText = isLocked ? "SYSTEM: LOCKED" : "SYSTEM: ONLINE";
         };
@@ -136,10 +141,8 @@
             }, 5000);
         };
 
-        const videoElement = document.getElementById('input_video');
         const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
         hands.setOptions({ maxNumHands: 1, minDetectionConfidence: 0.6 });
-
         let lastHandState = 'closed';
 
         hands.onResults((results) => {
@@ -150,19 +153,17 @@
                 const currentHandState = dist > 0.15 ? 'open' : 'closed';
                 if (lastHandState === 'closed' && currentHandState === 'open') shatter();
                 lastHandState = currentHandState;
-
                 if (!isLocked) {
                     currentScale = THREE.MathUtils.mapLinear(dist, 0.02, 0.3, 0.5, 3.5);
                     targetHue = l[0].x;
-                    rotVelY += (l[0].x - lastHandX) * 0.18;
-                    rotVelX += (l[0].y - lastHandY) * 0.18;
+                    rotVelY += (l[0].x - lastHandX) * 0.18; rotVelX += (l[0].y - lastHandY) * 0.18;
                 }
                 lastHandX = l[0].x; lastHandY = l[0].y;
             }
         });
 
-        const cameraInst = new Camera(videoElement, {
-            onFrame: async () => { await hands.send({image: videoElement}); },
+        const cameraInst = new Camera(document.getElementById('input_video'), {
+            onFrame: async () => { await hands.send({image: document.getElementById('input_video')}); },
             width: 320, height: 240
         });
         cameraInst.start();
@@ -171,8 +172,7 @@
         function animate() {
             requestAnimationFrame(animate);
             if (!isLocked) {
-                particleSystem.rotation.y += rotVelY;
-                particleSystem.rotation.x += rotVelX;
+                particleSystem.rotation.y += rotVelY; particleSystem.rotation.x += rotVelX;
                 rotVelX *= 0.95; rotVelY *= 0.95;
             }
             const pos = particleSystem.geometry.attributes.position.array;
@@ -182,9 +182,7 @@
                 let tx = targetPositions[idx] * currentScale;
                 let ty = targetPositions[idx + 1] * currentScale;
                 let tz = targetPositions[idx + 2] * currentScale;
-                if (isShattered) {
-                    tx += shatterOffsets[idx]; ty += shatterOffsets[idx + 1]; tz += shatterOffsets[idx + 2];
-                }
+                if (isShattered) { tx += shatterOffsets[idx]; ty += shatterOffsets[idx + 1]; tz += shatterOffsets[idx + 2]; }
                 pos[idx] += (tx - pos[idx]) * (isShattered ? 0.05 : 0.1);
                 pos[idx+1] += (ty - pos[idx+1]) * (isShattered ? 0.05 : 0.1);
                 pos[idx+2] += (tz - pos[idx+2]) * (isShattered ? 0.05 : 0.1);
