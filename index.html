@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Particle Physics - Shatter Build</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
+        
+        video { 
+            position: absolute; top: 15px; left: 15px; 
+            transform: scaleX(-1); opacity: 0.8; 
+            width: 240px; height: 180px; 
+            border: 2px solid #00ffcc; border-radius: 10px;
+            z-index: 100; background: #111;
+        }
+        
+        #loading-overlay { 
+            position: absolute; inset: 0; background: #050505;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            color: #00ffcc; z-index: 1000; text-align: center;
+        }
+
+        .btn {
+            background: rgba(0,0,0,0.8); border: 1px solid #00ffcc; color: #00ffcc;
+            padding: 12px 20px; cursor: pointer; border-radius: 5px; margin: 5px;
+            text-transform: uppercase; font-size: 0.8rem; letter-spacing: 1px; transition: 0.3s;
+        }
+        .btn:hover { background: #00ffcc; color: #000; box-shadow: 0 0 15px #00ffcc; }
+        .btn.active { background: #ff0055; border-color: #ff0055; color: #fff; }
+
+        #controls { position: absolute; top: 20px; right: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 500; }
+        
+        #status-indicator {
+            position: absolute; top: 15px; left: 270px; color: #00ffcc;
+            font-size: 0.7rem; text-transform: uppercase; letter-spacing: 2px;
+        }
+
+        /* Diagnostic Box */
+        #debug-log {
+            position: absolute; bottom: 10px; left: 10px; color: #444;
+            font-size: 10px; max-width: 300px; pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <video id="input_video" playsinline></video>
+    <div id="status-indicator">SYSTEM: ONLINE</div>
+    <div id="debug-log">Log: Initializing...</div>
+    
+    <div id="loading-overlay">
+        <h2 id="status-text">INITIALIZING AI...</h2>
+        <p id="error-help" style="color: #666; font-size: 0.8rem;"></p>
+        <button class="btn" id="manual-start" style="display:none;" onclick="startWithoutCamera()">Manual Start (Mouse Mode)</button>
+    </div>
+
+    <div id="controls">
+        <button class="btn" id="btn-sphere" onclick="setShape('sphere')">Sphere</button>
+        <button class="btn" id="btn-heart" onclick="setShape('heart')">Heart</button>
+        <button class="btn" id="btn-dna" onclick="setShape('dna')">DNA Helix</button>
+        <div style="height: 10px;"></div>
+        <button class="btn" id="btn-lock" onclick="toggleLock()">🔒 Lock Movement</button>
+        <button class="btn" onclick="shatter()">💥 Manual Shatter</button>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+
+    <script>
+        const logger = (msg) => { 
+            console.log(msg);
+            document.getElementById('debug-log').innerText += "\n> " + msg;
+        };
+
+        const PARTICLE_COUNT = 4000;
+        let currentShape = 'sphere';
+        let isLocked = false;
+        let isShattered = false;
+        let rotVelX = 0, rotVelY = 0.005;
+        let lastHandX = 0.5, lastHandY = 0.5;
+        let currentScale = 1.0, targetHue = 0.5;
+        const shatterOffsets = new Float32Array(PARTICLE_COUNT * 3);
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = 35;
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const geometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(PARTICLE_COUNT * 3);
+        const targetPositions = new Float32Array(PARTICLE_COUNT * 3);
+        const colors = new Float32Array(PARTICLE_COUNT * 3);
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+        const material = new THREE.PointsMaterial({ size: 0.2, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true });
+        const particleSystem = new THREE.Points(geometry, material);
+        scene.add(particleSystem);
+
+        function updateShapeTargets(type) {
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                let x, y, z;
+                if (type === 'heart') {
+                    const t = (i / PARTICLE_COUNT) * Math.PI * 2;
+                    x = 0.7 * (16 * Math.pow(Math.sin(t), 3));
+                    y = 0.7 * (13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t));
+                    z = (Math.random() - 0.5) * 4;
+                } else if (type === 'dna') {
+                    const t = (i / PARTICLE_COUNT) * Math.PI * 10;
+                    const s = i % 2 === 0 ? 1 : -1;
+                    x = 5 * Math.cos(t + (s * Math.PI)); y = (i / PARTICLE_COUNT - 0.5) * 30; z = 5 * Math.sin(t + (s * Math.PI));
+                } else {
+                    const phi = Math.acos(-1 + (2 * i) / PARTICLE_COUNT);
+                    const theta = Math.sqrt(PARTICLE_COUNT * Math.PI) * phi;
+                    x = 12 * Math.cos(theta) * Math.sin(phi); y = 12 * Math.sin(theta) * Math.sin(phi); z = 12 * Math.cos(phi);
+                }
+                targetPositions[i * 3] = x; targetPositions[i * 3 + 1] = y; targetPositions[i * 3 + 2] = z;
+            }
+        }
+
+        window.setShape = (type) => { currentShape = type; updateShapeTargets(type); };
+        window.toggleLock = () => {
+            isLocked = !isLocked;
+            rotVelX = 0; rotVelY = 0;
+            document.getElementById('btn-lock').classList.toggle('active');
+            document.getElementById('status-indicator').innerText = isLocked ? "SYSTEM: LOCKED" : "SYSTEM: ONLINE";
+        };
+
+        window.shatter = () => {
+            if (isShattered) return;
+            isShattered = true;
+            document.getElementById('status-indicator').innerText = "SYSTEM: SHATTERED";
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                shatterOffsets[i * 3] = (Math.random() - 0.5) * 100;
+                shatterOffsets[i * 3 + 1] = (Math.random() - 0.5) * 100;
+                shatterOffsets[i * 3 + 2] = (Math.random() - 0.5) * 100;
+            }
+            setTimeout(() => {
+                isShattered = false;
+                document.getElementById('status-indicator').innerText = isLocked ? "SYSTEM: LOCKED" : "SYSTEM: ONLINE";
+            }, 5000);
+        };
+
+        // --- HAND TRACKING BOOTSTRAP ---
+        logger("Loading MediaPipe Hands...");
+        const videoElement = document.getElementById('input_video');
+        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+        
+        hands.setOptions({ maxNumHands: 1, minDetectionConfidence: 0.6 });
+
+        let lastHandState = 'closed';
+        hands.onResults((results) => {
+            document.getElementById('loading-overlay').style.display = 'none';
+            if (results.multiHandLandmarks && results.multiHandLandmarks[0]) {
+                const l = results.multiHandLandmarks[0];
+                const distanceIndexThumb = Math.sqrt(Math.pow(l[4].x - l[8].x, 2) + Math.pow(l[4].y - l[8].y, 2));
+                const currentHandState = distanceIndexThumb > 0.15 ? 'open' : 'closed';
+                if (lastHandState === 'closed' && currentHandState === 'open') shatter();
+                lastHandState = currentHandState;
+
+                if (!isLocked) {
+                    currentScale = THREE.MathUtils.mapLinear(distanceIndexThumb, 0.02, 0.3, 0.5, 3.0);
+                    targetHue = l[0].x;
+                    rotVelY += (l[0].x - lastHandX) * 0.15;
+                    rotVelX += (l[0].y - lastHandY) * 0.15;
+                }
+                lastHandX = l[0].x; lastHandY = l[0].y;
+            }
+        });
+
+        logger("Initializing Camera...");
+        const cameraInst = new Camera(videoElement, {
+            onFrame: async () => { await hands.send({image: videoElement}); },
+            width: 320, height: 240
+        });
+
+        cameraInst.start()
+            .then(() => logger("Camera Started Successfully"))
+            .catch((err) => {
+                logger("Camera Error: " + err);
+                document.getElementById('status-text').innerText = "CAMERA BLOCKED";
+                document.getElementById('error-help').innerText = "Please allow camera access in your browser settings.";
+                document.getElementById('manual-start').style.display = 'block';
+            });
+
+        // Fail-safe: If AI doesn't respond in 8 seconds
+        setTimeout(() => {
+            if (document.getElementById('loading-overlay').style.display !== 'none') {
+                logger("AI Initialization Timeout");
+                document.getElementById('manual-start').style.display = 'block';
+                document.getElementById('error-help').innerText = "The AI is taking too long. You can try Mouse Mode or check your internet.";
+            }
+        }, 8000);
+
+        window.startWithoutCamera = () => {
+            document.getElementById('loading-overlay').style.display = 'none';
+            logger("Entering Mouse Mode");
+            window.addEventListener('mousemove', (e) => {
+                targetHue = e.clientX / window.innerWidth;
+                if (!isLocked) rotVelY += e.movementX * 0.002;
+            });
+        };
+
+        const colorObj = new THREE.Color();
+        function animate() {
+            requestAnimationFrame(animate);
+            if (!isLocked) {
+                particleSystem.rotation.y += rotVelY;
+                particleSystem.rotation.x += rotVelX;
+                rotVelX *= 0.95; rotVelY *= 0.95;
+            }
+            const pos = particleSystem.geometry.attributes.position.array;
+            const col = particleSystem.geometry.attributes.color.array;
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const idx = i * 3;
+                let tx = targetPositions[idx] * currentScale;
+                let ty = targetPositions[idx + 1] * currentScale;
+                let tz = targetPositions[idx + 2] * currentScale;
+                if (isShattered) {
+                    tx += shatterOffsets[idx]; ty += shatterOffsets[idx + 1]; tz += shatterOffsets[idx + 2];
+                }
+                pos[idx] += (tx - pos[idx]) * (isShattered ? 0.05 : 0.1);
+                pos[idx+1] += (ty - pos[idx+1]) * (isShattered ? 0.05 : 0.1);
+                pos[idx+2] += (tz - pos[idx+2]) * (isShattered ? 0.05 : 0.1);
+                colorObj.setHSL((targetHue + i / PARTICLE_COUNT * 0.2) % 1, 0.8, 0.6);
+                col[idx] = colorObj.r; col[idx+1] = colorObj.g; col[idx+2] = colorObj.b;
+            }
+            particleSystem.geometry.attributes.position.needsUpdate = true;
+            particleSystem.geometry.attributes.color.needsUpdate = true;
+            renderer.render(scene, camera);
+        }
+
+        updateShapeTargets('sphere');
+        animate();
+    </script>
+</body>
+</html>
