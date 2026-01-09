@@ -95,20 +95,22 @@
                     y = 0.7 * (13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t));
                     z = (Math.random() - 0.5) * 4;
                 } else if (type === 'dna') {
-                    const t = (i / PARTICLE_COUNT) * 15; // vertical span
-                    const spiral = i % 3; // 0 & 1 for strands, 2 for rungs
-                    const angle = t * 0.5;
-                    const radius = 6;
-                    
-                    if (spiral === 0) { // Strand 1
-                        x = radius * Math.cos(angle); z = radius * Math.sin(angle); y = t - 7.5;
-                    } else if (spiral === 1) { // Strand 2
-                        x = radius * Math.cos(angle + Math.PI); z = radius * Math.sin(angle + Math.PI); y = t - 7.5;
-                    } else { // Rungs
-                        const lerp = Math.random();
-                        x = (radius * Math.cos(angle)) * (lerp * 2 - 1);
-                        z = (radius * Math.sin(angle)) * (lerp * 2 - 1);
-                        y = t - 7.5;
+                    const t = (i / PARTICLE_COUNT) * 20; // Length of helix
+                    const spiralType = i % 3; 
+                    const angle = t * 0.8; // Twist frequency
+                    const radius = 5;
+
+                    if (spiralType === 0) { // Strand A
+                        x = radius * Math.cos(angle); z = radius * Math.sin(angle); y = t - 10;
+                    } else if (spiralType === 1) { // Strand B (180 deg offset)
+                        x = radius * Math.cos(angle + Math.PI); z = radius * Math.sin(angle + Math.PI); y = t - 10;
+                    } else { // Connecting Rungs
+                        let step = Math.random();
+                        let targetX = radius * Math.cos(angle);
+                        let targetZ = radius * Math.sin(angle);
+                        x = targetX * (step * 2 - 1);
+                        z = targetZ * (step * 2 - 1);
+                        y = t - 10;
                     }
                 } else {
                     const phi = Math.acos(-1 + (2 * i) / PARTICLE_COUNT);
