@@ -3,34 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Física de Partículas - Sensor de Alta Performance</title>
+    <title>Física de Partículas - Vórtice Quântico</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
-        
         video { 
             position: absolute; top: 15px; left: 15px; 
             transform: scaleX(-1); opacity: 0.8; 
             width: 240px; height: 180px; 
-            border: 2px solid #00ffcc; border-radius: 10px;
+            border: 2px solid #ff0055; border-radius: 10px;
             z-index: 100; background: #111;
         }
-        
         #loading-overlay { 
             position: absolute; inset: 0; background: #050505;
             display: flex; flex-direction: column; align-items: center; justify-content: center;
-            color: #00ffcc; z-index: 1000; text-align: center;
+            color: #ff0055; z-index: 1000; text-align: center;
         }
-
         .btn {
-            background: rgba(0,0,0,0.8); border: 1px solid #00ffcc; color: #00ffcc;
-            padding: 12px 20px; cursor: pointer; border-radius: 5px; margin: 5px;
-            text-transform: uppercase; font-size: 0.8rem; letter-spacing: 1px; transition: 0.3s;
+            background: rgba(0,0,0,0.8); border: 1px solid #ff0055; color: #ff0055;
+            padding: 10px 15px; cursor: pointer; border-radius: 5px; margin: 3px;
+            text-transform: uppercase; font-size: 0.75rem; letter-spacing: 1px; transition: 0.3s;
         }
-        .btn:hover { background: #00ffcc; color: #000; box-shadow: 0 0 15px #00ffcc; }
-        .btn.active { background: #00ffcc; color: #000; }
-
-        #controls { position: absolute; top: 20px; right: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 500; }
-        
+        .btn:hover { background: #ff0055; color: #000; box-shadow: 0 0 15px #ff0055; }
+        .btn.active { background: #ff0055; color: #000; }
+        #controls { position: absolute; top: 20px; right: 20px; display: flex; flex-direction: column; gap: 5px; z-index: 500; }
         #instructions {
             position: absolute; bottom: 20px; left: 20px; color: rgba(255,255,255,0.7);
             background: rgba(0,0,0,0.6); padding: 15px; border-radius: 5px; pointer-events: none;
@@ -43,28 +38,26 @@
     <video id="input_video" playsinline></video>
     
     <div id="loading-overlay">
-        <h2 id="status-text">INICIALIZANDO MOTOR DE IA...</h2>
-        <p id="sub-text">Por favor, permita o acesso à câmera.</p>
-        <div id="fallback-ui" style="display:none; margin-top: 20px;">
-            <button class="btn" onclick="startMouseMode()">Iniciar com Mouse</button>
-        </div>
+        <h2 id="status-text">SISTEMA ORBITAL ATIVO</h2>
+        <p id="sub-text">Mão Direita controla a rotação da figura.</p>
     </div>
 
     <div id="controls">
         <button class="btn active" id="btn-sphere" onclick="setShape('sphere')">Esfera</button>
+        <button class="btn" id="btn-blackhole" onclick="setShape('blackhole')">🕳️ Buraco Negro</button>
         <button class="btn" id="btn-heart" onclick="setShape('heart')">Coração</button>
-        <button class="btn" id="btn-dna" onclick="setShape('dna')">DNA Dupla Hélice</button>
+        <button class="btn" id="btn-dna" onclick="setShape('dna')">DNA</button>
         <button class="btn" id="btn-saturn" onclick="setShape('saturn')">Saturno</button>
-        <div style="height: 10px;"></div>
-        <button class="btn" id="btn-freeze" onclick="toggleFreeze()">❄️ Congelar Forma</button>
+        <div style="height: 10px; border-top: 1px solid #333; margin: 5px 0;"></div>
+        <button class="btn" id="btn-freeze-shape" onclick="toggleFreeze()">❄️ Congelar</button>
+        <button class="btn" id="btn-lock-rotation" onclick="toggleRotationLock()">🔓 Rotação Livre</button>
     </div>
 
     <div id="instructions">
-        <b>CALIBRAÇÃO DE PRECISÃO:</b><br>
-        👋 Mover Mão: Girar objeto<br>
-        👌 Pinça Longa: Zoom / Escala<br>
-        ⚡ Estalo Instantâneo: Estilhaçar (25-50ms)<br>
-        ⏳ Retorno: 3 segundos
+        🔄 <b>Rotacionar:</b> Mão Direita<br>
+        👌 <b>Zoom:</b> Pinça (Mão Esq)<br>
+        ✊+✊ <b>Ímã:</b> Trava Rotação, Zoom e Atrai<br>
+        🖐️+🖐️ <b>Estilhaçar:</b> Abra as mãos!
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
@@ -72,18 +65,18 @@
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
 
     <script>
-        const PARTICLE_COUNT = 4000;
-        let currentShape = 'sphere';
-        let isFrozen = false;
-        let isCameraReady = false;
+        const PARTICLE_COUNT = 4500;
+        let isFrozen = false, isCameraReady = false, isRotationLocked = false;
+        let magnetActive = false, isExploded = false;
+        let currentShapeType = 'sphere';
+        
+        let handPosWorld = new THREE.Vector3();
+        let targetRotation = new THREE.Euler(0, 0, 0); 
+        let currentScale = 1.0, targetHue = 0.85;
 
-        let isExploded = false;
-        let lastPinchTime = 0;
-        let wasPinching = false;
-
-        let rotVelX = 0, rotVelY = 0.005; 
-        let lastHandX = 0.5, lastHandY = 0.5;
-        let currentScale = 1.0, targetHue = 0.5;
+        const positions = new Float32Array(PARTICLE_COUNT * 3);
+        const targetPositions = new Float32Array(PARTICLE_COUNT * 3);
+        const explodeVelocities = new Float32Array(PARTICLE_COUNT * 3);
 
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -93,155 +86,200 @@
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
 
-        const geometry = new THREE.BufferGeometry();
-        const positions = new Float32Array(PARTICLE_COUNT * 3);
-        const targetPositions = new Float32Array(PARTICLE_COUNT * 3);
-        const velocities = new Float32Array(PARTICLE_COUNT * 3);
-        const colors = new Float32Array(PARTICLE_COUNT * 3);
+        const handIndicator = new THREE.Mesh(
+            new THREE.SphereGeometry(0.6, 32, 32),
+            new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3 })
+        );
+        scene.add(handIndicator);
 
+        const geometry = new THREE.BufferGeometry();
+        const colors = new Float32Array(PARTICLE_COUNT * 3);
         geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
         geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
-        const material = new THREE.PointsMaterial({ size: 0.2, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true });
+        const material = new THREE.PointsMaterial({ size: 0.18, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true });
         const particleSystem = new THREE.Points(geometry, material);
         scene.add(particleSystem);
 
         function updateShapeTargets(type) {
+            currentShapeType = type;
+            document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+            const activeBtn = document.getElementById(`btn-${type}`);
+            if(activeBtn) activeBtn.classList.add('active');
+
             for (let i = 0; i < PARTICLE_COUNT; i++) {
                 let x, y, z;
-                if (type === 'heart') {
+                
+                if (type === 'blackhole') {
+                    targetHue = 0.06;
+                    if (i < 500) {
+                        const phi = Math.acos(-1 + (2 * i) / 500);
+                        const theta = Math.sqrt(500 * Math.PI) * phi;
+                        x = 3.5 * Math.cos(theta) * Math.sin(phi);
+                        y = 3.5 * Math.sin(theta) * Math.sin(phi);
+                        z = 3.5 * Math.cos(phi);
+                    } else {
+                        const radius = 7 + Math.random() * 13;
+                        const angle = Math.random() * Math.PI * 2;
+                        x = Math.cos(angle) * radius;
+                        z = Math.sin(angle) * radius;
+                        y = (Math.random() - 0.5) * (1.5 - (radius/25));
+                    }
+                } else if (type === 'heart') {
+                    targetHue = 0.95;
                     const t = (i / PARTICLE_COUNT) * Math.PI * 2;
                     x = 0.7 * (16 * Math.pow(Math.sin(t), 3));
                     y = 0.7 * (13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t));
                     z = (Math.random() - 0.5) * 4;
                 } else if (type === 'dna') {
-                    const selector = Math.random();
-                    const t = (i / PARTICLE_COUNT) * Math.PI * 12; 
-                    const radius = 6;
-                    if (selector < 0.45) { x = radius * Math.cos(t); z = radius * Math.sin(t); y = (i / PARTICLE_COUNT - 0.5) * 40; }
-                    else if (selector < 0.90) { x = radius * Math.cos(t + Math.PI); z = radius * Math.sin(t + Math.PI); y = (i / PARTICLE_COUNT - 0.5) * 40; }
-                    else { const lerp = Math.random(); x = radius * Math.cos(t) * (1 - 2 * lerp); z = radius * Math.sin(t) * (1 - 2 * lerp); y = (i / PARTICLE_COUNT - 0.5) * 40; }
+                    targetHue = 0.55;
+                    const t = (i / PARTICLE_COUNT) * Math.PI * 12;
+                    const side = i % 2 === 0 ? 1 : -1;
+                    x = side * 6 * Math.cos(t); z = side * 6 * Math.sin(t); y = (i / PARTICLE_COUNT - 0.5) * 40;
                 } else if (type === 'saturn') {
-                    if (i < PARTICLE_COUNT * 0.6) {
-                        const phi = Math.acos(-1 + (2 * i) / (PARTICLE_COUNT * 0.6));
-                        const theta = Math.sqrt((PARTICLE_COUNT * 0.6) * Math.PI) * phi;
+                    targetHue = 0.15;
+                    if (i < PARTICLE_COUNT * 0.5) {
+                        const phi = Math.acos(-1 + (2 * i) / (PARTICLE_COUNT * 0.5));
+                        const theta = Math.sqrt((PARTICLE_COUNT * 0.5) * Math.PI) * phi;
                         x = 7 * Math.cos(theta) * Math.sin(phi); y = 7 * Math.sin(theta) * Math.sin(phi); z = 7 * Math.cos(phi);
                     } else {
-                        const a = (i / (PARTICLE_COUNT * 0.4)) * Math.PI * 16;
-                        const r = 11 + Math.random() * 4;
-                        x = r * Math.cos(a); y = (Math.random() - 0.5); z = r * Math.sin(a);
+                        const a = Math.random() * Math.PI * 2;
+                        const r = 10 + Math.random() * 6;
+                        x = r * Math.cos(a); y = (Math.random()-0.5) * 0.5; z = r * Math.sin(a);
                     }
-                } else { // Esfera
+                } else { // Sphere
+                    targetHue = 0.8;
                     const phi = Math.acos(-1 + (2 * i) / PARTICLE_COUNT);
                     const theta = Math.sqrt(PARTICLE_COUNT * Math.PI) * phi;
                     x = 12 * Math.cos(theta) * Math.sin(phi); y = 12 * Math.sin(theta) * Math.sin(phi); z = 12 * Math.cos(phi);
                 }
                 targetPositions[i * 3] = x; targetPositions[i * 3 + 1] = y; targetPositions[i * 3 + 2] = z;
-                velocities[i*3] = (Math.random() - 0.5) * 3.0; // Explosão ligeiramente mais forte
-                velocities[i*3+1] = (Math.random() - 0.5) * 3.0;
-                velocities[i*3+2] = (Math.random() - 0.5) * 3.0;
             }
-            document.querySelectorAll('#controls .btn').forEach(b => { if(!b.id.includes('freeze')) b.classList.remove('active'); });
-            document.getElementById('btn-' + type).classList.add('active');
         }
 
-        window.triggerExplosion = () => {
+        function explode() {
             if (isExploded) return;
             isExploded = true;
-            setTimeout(() => { isExploded = false; }, 3000);
-        };
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                explodeVelocities[i*3] = (Math.random() - 0.5) * 10;
+                explodeVelocities[i*3+1] = (Math.random() - 0.5) * 10;
+                explodeVelocities[i*3+2] = (Math.random() - 0.5) * 10;
+            }
+            setTimeout(() => { isExploded = false; }, 2500);
+        }
 
-        window.setShape = (type) => { if(isFrozen) toggleFreeze(); currentShape = type; updateShapeTargets(type); };
-        window.toggleFreeze = () => { isFrozen = !isFrozen; document.getElementById('btn-freeze').classList.toggle('active'); };
-        
-        window.startMouseMode = () => {
-            document.getElementById('loading-overlay').style.display = 'none';
-            window.addEventListener('mousedown', triggerExplosion);
-            window.addEventListener('mousemove', (e) => {
-                targetHue = e.clientX / window.innerWidth;
-                rotVelY += (e.movementX * 0.001);
-                rotVelX += (e.movementY * 0.001);
-            });
+        window.setShape = (type) => { updateShapeTargets(type); };
+        window.toggleFreeze = () => { isFrozen = !isFrozen; document.getElementById('btn-freeze-shape').classList.toggle('active'); };
+        window.toggleRotationLock = () => { 
+            isRotationLocked = !isRotationLocked; 
+            const btn = document.getElementById('btn-lock-rotation');
+            btn.classList.toggle('active');
+            btn.innerHTML = isRotationLocked ? '🔒 Rotação Presa' : '🔓 Rotação Livre';
         };
 
         const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.8, minTrackingConfidence: 0.8 });
+        hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
         
         hands.onResults((results) => {
             if (!isCameraReady) { isCameraReady = true; document.getElementById('loading-overlay').style.display = 'none'; }
+            let leftHand = null, rightHand = null;
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                results.multiHandLandmarks.forEach((landmarks, index) => {
+                    const label = results.multiHandedness[index].label;
+                    if (label === 'Left') rightHand = landmarks; else leftHand = landmarks;
+                });
 
-            if (results.multiHandLandmarks && results.multiHandLandmarks[0]) {
-                const l = results.multiHandLandmarks[0];
-                const d = Math.sqrt(Math.pow(l[4].x - l[8].x, 2) + Math.pow(l[4].y - l[8].y, 2));
-                const now = Date.now();
-
-                const isPinchingNow = d < 0.035;
-
-                if (isPinchingNow && !wasPinching) {
-                    lastPinchTime = now; 
-                } else if (!isPinchingNow && wasPinching) {
-                    const duration = now - lastPinchTime;
-                    // JANELA DE TEMPO SOLICITADA: 25ms a 50ms
-                    if (duration >= 25 && duration <= 50) {
-                        triggerExplosion();
+                // Detecção do Ímã (Mãos Fechadas)
+                if (leftHand && rightHand) {
+                    const rOpen = Math.sqrt(Math.pow(rightHand[8].x - rightHand[0].x, 2) + Math.pow(rightHand[8].y - rightHand[0].y, 2)) > 0.4;
+                    const lOpen = Math.sqrt(Math.pow(leftHand[8].x - leftHand[0].x, 2) + Math.pow(leftHand[8].y - leftHand[0].y, 2)) > 0.4;
+                    if (rOpen && lOpen && !isExploded) explode();
+                    
+                    const rClosed = Math.sqrt(Math.pow(rightHand[8].x - rightHand[0].x, 2) + Math.pow(rightHand[8].y - rightHand[0].y, 2)) < 0.2;
+                    const lClosed = Math.sqrt(Math.pow(leftHand[8].x - leftHand[0].x, 2) + Math.pow(leftHand[8].y - leftHand[0].y, 2)) < 0.2;
+                    magnetActive = rClosed && lClosed;
+                }
+                
+                // ZOOM TRAVA AQUI SE O ÍMÃ ESTIVER ATIVO
+                if (leftHand && !magnetActive) {
+                    const dPinch = Math.sqrt(Math.pow(leftHand[4].x - leftHand[8].x, 2) + Math.pow(leftHand[4].y - leftHand[8].y, 2));
+                    currentScale = THREE.MathUtils.mapLinear(dPinch, 0.02, 0.25, 0.4, 4.0);
+                }
+                
+                if (rightHand) {
+                    handIndicator.visible = true;
+                    handPosWorld.set((0.5 - rightHand[9].x) * 50, (0.5 - rightHand[9].y) * 35, 0);
+                    handIndicator.position.lerp(handPosWorld, 0.2);
+                    
+                    if (!isRotationLocked && !magnetActive) {
+                        targetRotation.y = (rightHand[9].x - 0.5) * Math.PI * 2;
+                        targetRotation.x = (rightHand[9].y - 0.5) * Math.PI;
                     }
+                    handIndicator.material.color.set(magnetActive ? 0x00ff00 : 0xffffff);
                 }
-                wasPinching = isPinchingNow;
-
-                if (!isExploded) {
-                    currentScale = THREE.MathUtils.mapLinear(d, 0.02, 0.3, 0.4, 4.0);
-                }
-
-                targetHue = l[0].x;
-                const dx = l[0].x - lastHandX;
-                const dy = l[0].y - lastHandY;
-                if (Math.abs(dx) > 0.002) rotVelY += dx * 0.15;
-                if (Math.abs(dy) > 0.002) rotVelX += dy * 0.15;
-                lastHandX = l[0].x; lastHandY = l[0].y;
             }
         });
 
         const videoElement = document.getElementById('input_video');
-        const cameraInst = new Camera(videoElement, {
+        new Camera(videoElement, {
             onFrame: async () => { await hands.send({image: videoElement}); },
             width: 320, height: 240
-        });
-        cameraInst.start();
+        }).start();
 
         const colorObj = new THREE.Color();
         function animate() {
             requestAnimationFrame(animate);
-            particleSystem.rotation.y += rotVelY;
-            particleSystem.rotation.x += rotVelX;
-            rotVelX *= 0.95; rotVelY *= 0.95;
 
-            const pos = particleSystem.geometry.attributes.position.array;
-            const col = particleSystem.geometry.attributes.color.array;
+            particleSystem.rotation.x += (targetRotation.x - particleSystem.rotation.x) * 0.1;
+            particleSystem.rotation.y += (targetRotation.y - particleSystem.rotation.y) * 0.1;
 
-            if (!isFrozen) {
-                for (let i = 0; i < PARTICLE_COUNT; i++) {
-                    const idx = i * 3;
-                    if (isExploded) {
-                        pos[idx] += velocities[idx] * 2.8;
-                        pos[idx+1] += velocities[idx+1] * 2.8;
-                        pos[idx+2] += velocities[idx+2] * 2.8;
-                    } else {
-                        pos[idx] += (targetPositions[idx] * currentScale - pos[idx]) * 0.08;
-                        pos[idx+1] += (targetPositions[idx+1] * currentScale - pos[idx+1]) * 0.08;
-                        pos[idx+2] += (targetPositions[idx+2] * currentScale - pos[idx+2]) * 0.08;
+            const pos = geometry.attributes.position.array;
+            const col = geometry.attributes.color.array;
+            const invRotation = new THREE.Euler(-particleSystem.rotation.x, -particleSystem.rotation.y, 0, 'XYZ');
+            const localHandPos = handIndicator.position.clone().applyEuler(invRotation);
+
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const idx = i * 3;
+                if (isExploded) {
+                    pos[idx] += explodeVelocities[idx];
+                    pos[idx+1] += explodeVelocities[idx+1];
+                    pos[idx+2] += explodeVelocities[idx+2];
+                    explodeVelocities[idx] *= 0.97;
+                    explodeVelocities[idx+1] *= 0.97;
+                    explodeVelocities[idx+2] *= 0.97;
+                } else if (!isFrozen) {
+                    let tx = targetPositions[idx] * currentScale;
+                    let ty = targetPositions[idx+1] * currentScale;
+                    let tz = targetPositions[idx+2] * currentScale;
+
+                    if (magnetActive) {
+                        const dToHand = Math.sqrt(Math.pow(pos[idx] - localHandPos.x, 2) + Math.pow(pos[idx+1] - localHandPos.y, 2) + Math.pow(pos[idx+2] - localHandPos.z, 2));
+                        if (dToHand < 15) { 
+                            tx = localHandPos.x + (Math.random() - 0.5) * 3;
+                            ty = localHandPos.y + (Math.random() - 0.5) * 3;
+                            tz = localHandPos.z + (Math.random() - 0.5) * 3;
+                        }
                     }
-                    colorObj.setHSL((targetHue + i / PARTICLE_COUNT * 0.2) % 1, 0.8, 0.6);
+                    pos[idx] += (tx - pos[idx]) * 0.08;
+                    pos[idx+1] += (ty - pos[idx+1]) * 0.08;
+                    pos[idx+2] += (tz - pos[idx+2]) * 0.08;
+                }
+                
+                if (currentShapeType === 'blackhole' && i < 500) {
+                    col[idx] = 1; col[idx+1] = 1; col[idx+2] = 1;
+                } else {
+                    let hueShift = (targetHue + (i/PARTICLE_COUNT) * 0.15) % 1;
+                    colorObj.setHSL(hueShift, 0.9, 0.6);
                     col[idx] = colorObj.r; col[idx+1] = colorObj.g; col[idx+2] = colorObj.b;
                 }
-                particleSystem.geometry.attributes.position.needsUpdate = true;
-                particleSystem.geometry.attributes.color.needsUpdate = true;
             }
+            geometry.attributes.position.needsUpdate = true;
+            geometry.attributes.color.needsUpdate = true;
             renderer.render(scene, camera);
         }
 
         updateShapeTargets('sphere');
         animate();
-
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
