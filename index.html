@@ -1,13 +1,12 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-br">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Interactive Particle Physics (Final Build)</title>
+    <title>Física de Partículas - Sensor de Alta Performance</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
         
-        /* Clearer Webcam View in Top Left */
         video { 
             position: absolute; top: 15px; left: 15px; 
             transform: scaleX(-1); opacity: 0.8; 
@@ -16,7 +15,6 @@
             z-index: 100; background: #111;
         }
         
-        /* Loading Overlay & Troubleshooting */
         #loading-overlay { 
             position: absolute; inset: 0; background: #050505;
             display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -35,8 +33,8 @@
         
         #instructions {
             position: absolute; bottom: 20px; left: 20px; color: rgba(255,255,255,0.7);
-            background: rgba(0,0,0,0.6); padding: 10px; border-radius: 5px; pointer-events: none;
-            font-size: 0.8rem; border: 1px solid #333;
+            background: rgba(0,0,0,0.6); padding: 15px; border-radius: 5px; pointer-events: none;
+            font-size: 0.8rem; border: 1px solid #333; line-height: 1.5;
         }
     </style>
 </head>
@@ -45,29 +43,28 @@
     <video id="input_video" playsinline></video>
     
     <div id="loading-overlay">
-        <h2 id="status-text">BOOTING AI ENGINE...</h2>
-        <p id="sub-text">Please allow camera access when prompted.</p>
+        <h2 id="status-text">INICIALIZANDO MOTOR DE IA...</h2>
+        <p id="sub-text">Por favor, permita o acesso à câmera.</p>
         <div id="fallback-ui" style="display:none; margin-top: 20px;">
-            <button class="btn" onclick="startMouseMode()">Start with Mouse Only</button>
-            <p style="font-size: 0.7rem; color: #666;">(Use this if your camera is blocked or not found)</p>
+            <button class="btn" onclick="startMouseMode()">Iniciar com Mouse</button>
         </div>
     </div>
 
     <div id="controls">
-        <button class="btn active" id="btn-sphere" onclick="setShape('sphere')">Sphere</button>
-        <button class="btn" id="btn-heart" onclick="setShape('heart')">Heart</button>
-        <button class="btn" id="btn-dna" onclick="setShape('dna')">DNA Helix</button>
-        <button class="btn" id="btn-saturn" onclick="setShape('saturn')">Saturn</button>
+        <button class="btn active" id="btn-sphere" onclick="setShape('sphere')">Esfera</button>
+        <button class="btn" id="btn-heart" onclick="setShape('heart')">Coração</button>
+        <button class="btn" id="btn-dna" onclick="setShape('dna')">DNA Dupla Hélice</button>
+        <button class="btn" id="btn-saturn" onclick="setShape('saturn')">Saturno</button>
         <div style="height: 10px;"></div>
-        <button class="btn" onclick="stopRotation()" style="border-color: #ff0055; color: #ff0055;">⏹ Stop Rotation</button>
-        <button class="btn" id="btn-freeze" onclick="toggleFreeze()">❄️ Freeze Shape</button>
+        <button class="btn" id="btn-freeze" onclick="toggleFreeze()">❄️ Congelar Forma</button>
     </div>
 
     <div id="instructions">
-        <b>CONTROLS:</b><br>
-        👋 Swipe Hand: Spin shape<br>
-        👌 Pinch Finger: Scale / Explode<br>
-        🖱 Mouse Move: Rotate (Fallback mode)
+        <b>CALIBRAÇÃO DE PRECISÃO:</b><br>
+        👋 Mover Mão: Girar objeto<br>
+        👌 Pinça Longa: Zoom / Escala<br>
+        ⚡ Estalo Instantâneo: Estilhaçar (25-50ms)<br>
+        ⏳ Retorno: 3 segundos
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
@@ -75,30 +72,31 @@
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
 
     <script>
-        // --- CONFIG ---
         const PARTICLE_COUNT = 4000;
         let currentShape = 'sphere';
         let isFrozen = false;
         let isCameraReady = false;
 
-        // Rotation & Scale Variables
+        let isExploded = false;
+        let lastPinchTime = 0;
+        let wasPinching = false;
+
         let rotVelX = 0, rotVelY = 0.005; 
         let lastHandX = 0.5, lastHandY = 0.5;
         let currentScale = 1.0, targetHue = 0.5;
 
-        // --- THREE.JS INITIALIZATION ---
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         camera.position.z = 35;
 
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(window.devicePixelRatio);
         document.body.appendChild(renderer.domElement);
 
         const geometry = new THREE.BufferGeometry();
         const positions = new Float32Array(PARTICLE_COUNT * 3);
         const targetPositions = new Float32Array(PARTICLE_COUNT * 3);
+        const velocities = new Float32Array(PARTICLE_COUNT * 3);
         const colors = new Float32Array(PARTICLE_COUNT * 3);
 
         geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -108,7 +106,6 @@
         const particleSystem = new THREE.Points(geometry, material);
         scene.add(particleSystem);
 
-        // --- SHAPE GENERATORS ---
         function updateShapeTargets(type) {
             for (let i = 0; i < PARTICLE_COUNT; i++) {
                 let x, y, z;
@@ -118,9 +115,12 @@
                     y = 0.7 * (13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t));
                     z = (Math.random() - 0.5) * 4;
                 } else if (type === 'dna') {
-                    const t = (i / PARTICLE_COUNT) * Math.PI * 10;
-                    const s = i % 2 === 0 ? 1 : -1;
-                    x = 5 * Math.cos(t + (s * Math.PI)); y = (i / PARTICLE_COUNT - 0.5) * 30; z = 5 * Math.sin(t + (s * Math.PI));
+                    const selector = Math.random();
+                    const t = (i / PARTICLE_COUNT) * Math.PI * 12; 
+                    const radius = 6;
+                    if (selector < 0.45) { x = radius * Math.cos(t); z = radius * Math.sin(t); y = (i / PARTICLE_COUNT - 0.5) * 40; }
+                    else if (selector < 0.90) { x = radius * Math.cos(t + Math.PI); z = radius * Math.sin(t + Math.PI); y = (i / PARTICLE_COUNT - 0.5) * 40; }
+                    else { const lerp = Math.random(); x = radius * Math.cos(t) * (1 - 2 * lerp); z = radius * Math.sin(t) * (1 - 2 * lerp); y = (i / PARTICLE_COUNT - 0.5) * 40; }
                 } else if (type === 'saturn') {
                     if (i < PARTICLE_COUNT * 0.6) {
                         const phi = Math.acos(-1 + (2 * i) / (PARTICLE_COUNT * 0.6));
@@ -131,24 +131,32 @@
                         const r = 11 + Math.random() * 4;
                         x = r * Math.cos(a); y = (Math.random() - 0.5); z = r * Math.sin(a);
                     }
-                } else { // Sphere
+                } else { // Esfera
                     const phi = Math.acos(-1 + (2 * i) / PARTICLE_COUNT);
                     const theta = Math.sqrt(PARTICLE_COUNT * Math.PI) * phi;
                     x = 12 * Math.cos(theta) * Math.sin(phi); y = 12 * Math.sin(theta) * Math.sin(phi); z = 12 * Math.cos(phi);
                 }
                 targetPositions[i * 3] = x; targetPositions[i * 3 + 1] = y; targetPositions[i * 3 + 2] = z;
+                velocities[i*3] = (Math.random() - 0.5) * 3.0; // Explosão ligeiramente mais forte
+                velocities[i*3+1] = (Math.random() - 0.5) * 3.0;
+                velocities[i*3+2] = (Math.random() - 0.5) * 3.0;
             }
             document.querySelectorAll('#controls .btn').forEach(b => { if(!b.id.includes('freeze')) b.classList.remove('active'); });
             document.getElementById('btn-' + type).classList.add('active');
         }
 
-        // --- SYSTEM ACTIONS ---
+        window.triggerExplosion = () => {
+            if (isExploded) return;
+            isExploded = true;
+            setTimeout(() => { isExploded = false; }, 3000);
+        };
+
         window.setShape = (type) => { if(isFrozen) toggleFreeze(); currentShape = type; updateShapeTargets(type); };
-        window.stopRotation = () => { rotVelX = 0; rotVelY = 0; };
         window.toggleFreeze = () => { isFrozen = !isFrozen; document.getElementById('btn-freeze').classList.toggle('active'); };
         
         window.startMouseMode = () => {
             document.getElementById('loading-overlay').style.display = 'none';
+            window.addEventListener('mousedown', triggerExplosion);
             window.addEventListener('mousemove', (e) => {
                 targetHue = e.clientX / window.innerWidth;
                 rotVelY += (e.movementX * 0.001);
@@ -156,63 +164,56 @@
             });
         };
 
-        // --- HAND TRACKING LOGIC ---
-        const videoElement = document.getElementById('input_video');
         const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-        
-        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.8, minTrackingConfidence: 0.8 });
         
         hands.onResults((results) => {
-            if (!isCameraReady) {
-                isCameraReady = true;
-                document.getElementById('loading-overlay').style.display = 'none';
-            }
+            if (!isCameraReady) { isCameraReady = true; document.getElementById('loading-overlay').style.display = 'none'; }
 
             if (results.multiHandLandmarks && results.multiHandLandmarks[0]) {
                 const l = results.multiHandLandmarks[0];
-                const wrist = l[0];
-                
-                // Pinch to Scale
                 const d = Math.sqrt(Math.pow(l[4].x - l[8].x, 2) + Math.pow(l[4].y - l[8].y, 2));
-                currentScale = THREE.MathUtils.mapLinear(d, 0.02, 0.3, 0.4, 4.0);
-                
-                // Position for Hue and Directional Spin
-                targetHue = wrist.x;
-                const dx = wrist.x - lastHandX;
-                const dy = wrist.y - lastHandY;
-                
+                const now = Date.now();
+
+                const isPinchingNow = d < 0.035;
+
+                if (isPinchingNow && !wasPinching) {
+                    lastPinchTime = now; 
+                } else if (!isPinchingNow && wasPinching) {
+                    const duration = now - lastPinchTime;
+                    // JANELA DE TEMPO SOLICITADA: 25ms a 50ms
+                    if (duration >= 25 && duration <= 50) {
+                        triggerExplosion();
+                    }
+                }
+                wasPinching = isPinchingNow;
+
+                if (!isExploded) {
+                    currentScale = THREE.MathUtils.mapLinear(d, 0.02, 0.3, 0.4, 4.0);
+                }
+
+                targetHue = l[0].x;
+                const dx = l[0].x - lastHandX;
+                const dy = l[0].y - lastHandY;
                 if (Math.abs(dx) > 0.002) rotVelY += dx * 0.15;
                 if (Math.abs(dy) > 0.002) rotVelX += dy * 0.15;
-                
-                lastHandX = wrist.x; lastHandY = wrist.y;
+                lastHandX = l[0].x; lastHandY = l[0].y;
             }
         });
 
+        const videoElement = document.getElementById('input_video');
         const cameraInst = new Camera(videoElement, {
             onFrame: async () => { await hands.send({image: videoElement}); },
             width: 320, height: 240
         });
+        cameraInst.start();
 
-        cameraInst.start().catch(() => {
-            document.getElementById('status-text').innerText = "CAMERA BLOCKED";
-            document.getElementById('fallback-ui').style.display = 'block';
-        });
-
-        // Fail-safe for slow loading
-        setTimeout(() => {
-            if(!isCameraReady) document.getElementById('fallback-ui').style.display = 'block';
-        }, 8000);
-
-        // --- MAIN ANIMATION LOOP ---
         const colorObj = new THREE.Color();
         function animate() {
             requestAnimationFrame(animate);
-
-            // Apply Rotation Physics
             particleSystem.rotation.y += rotVelY;
             particleSystem.rotation.x += rotVelX;
-            rotVelX *= 0.95; // Friction
-            rotVelY *= 0.95;
+            rotVelX *= 0.95; rotVelY *= 0.95;
 
             const pos = particleSystem.geometry.attributes.position.array;
             const col = particleSystem.geometry.attributes.color.array;
@@ -220,19 +221,21 @@
             if (!isFrozen) {
                 for (let i = 0; i < PARTICLE_COUNT; i++) {
                     const idx = i * 3;
-                    // Move current particles toward target shape with smoothing
-                    pos[idx] += (targetPositions[idx] * currentScale - pos[idx]) * 0.1;
-                    pos[idx+1] += (targetPositions[idx+1] * currentScale - pos[idx+1]) * 0.1;
-                    pos[idx+2] += (targetPositions[idx+2] * currentScale - pos[idx+2]) * 0.1;
-
-                    // Color Shift
+                    if (isExploded) {
+                        pos[idx] += velocities[idx] * 2.8;
+                        pos[idx+1] += velocities[idx+1] * 2.8;
+                        pos[idx+2] += velocities[idx+2] * 2.8;
+                    } else {
+                        pos[idx] += (targetPositions[idx] * currentScale - pos[idx]) * 0.08;
+                        pos[idx+1] += (targetPositions[idx+1] * currentScale - pos[idx+1]) * 0.08;
+                        pos[idx+2] += (targetPositions[idx+2] * currentScale - pos[idx+2]) * 0.08;
+                    }
                     colorObj.setHSL((targetHue + i / PARTICLE_COUNT * 0.2) % 1, 0.8, 0.6);
                     col[idx] = colorObj.r; col[idx+1] = colorObj.g; col[idx+2] = colorObj.b;
                 }
                 particleSystem.geometry.attributes.position.needsUpdate = true;
                 particleSystem.geometry.attributes.color.needsUpdate = true;
             }
-
             renderer.render(scene, camera);
         }
 
